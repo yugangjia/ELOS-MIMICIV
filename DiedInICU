@@ -1,0 +1,16 @@
+select icu.*, pat.gender,pat.anchor_age,adm.language,adm.ethnicity,adm.deathtime,sepsis.sepsis3,oasis.oasis,vent.vent,sofa24.sofa_adm 
+from `physionet-data.mimic_icu.icustays` as icu 
+left join `physionet-data.mimic_core.admissions` as adm
+on adm.HADM_ID = icu.HADM_ID
+left join (select stay_id, sofa_24hours as sofa_adm from physionet-data.mimic_derived.sofa where hr=24) as sofa24
+on sofa24.stay_id = icu.stay_id
+left join `physionet-data.mimic_core.patients` as pat
+on pat.subject_id = icu.subject_id
+left join `physionet-data.mimic_derived.sepsis3` as sepsis
+on sepsis.stay_id = icu.stay_id
+left join `physionet-data.mimic_derived.oasis` as oasis
+on oasis.stay_id = icu.stay_id
+left join `icu-elos.mimic_elos.ventiltation_first_day` as vent
+on vent.stay_id = icu.stay_id
+where adm.DEATHTIME is not null 
+and adm.deathtime between icu.intime  and icu.outtime
