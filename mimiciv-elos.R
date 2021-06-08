@@ -12,7 +12,7 @@ library(gridExtra)
 
 set.seed(30)
 
-dx <- read.csv("~/Desktop/icu_elos/dx.csv")
+dx <- read.csv("dx.csv")
 elixhauser_icd10 <- comorbidity(x = as.data.frame(filter(dx,icd_version==10)), id = "hadm_id", 
                           code = "icd_code", score = "elixhauser", icd = "icd10", assign0 = FALSE)
 elixhauser_icd9 <- comorbidity(x = as.data.frame(filter(dx,icd_version==9)), id = "hadm_id", 
@@ -22,7 +22,7 @@ EthinictyList = c('WHITE', 'ASIAN','BLACK/AFRICAN AMERICAN','HISPANIC/LATINO')
 
 
 
-cohort <- read.csv("~/Desktop/icu_elos/cohort.csv", stringsAsFactors=TRUE)%>%
+cohort <- read.csv("cohort.csv", stringsAsFactors=TRUE)%>%
   left_join(elix, by = c('hadm_id'))%>%
   mutate(male=ifelse(gender=="M",1,0))%>%
   mutate(ethnicity=as.factor(ethnicity))%>%
