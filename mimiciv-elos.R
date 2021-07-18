@@ -22,24 +22,24 @@ EthinictyList = c('WHITE', 'ASIAN','BLACK/AFRICAN AMERICAN','HISPANIC/LATINO')
 
 
 
-cohort <- read.csv("cohort.csv", stringsAsFactors=TRUE)%>%
+cohort <- read.csv("mimic_died_hospice.csv", stringsAsFactors=TRUE)%>%
   left_join(elix, by = c('hadm_id'))%>%
   mutate(male=ifelse(gender=="M",1,0))%>%
+  mutate(bmi = 10000*weight_admit/height^2)%>%
   mutate(ethnicity=as.factor(ethnicity))%>%
   mutate(ethnicity=relevel(ethnicity, ref = 'WHITE'))%>%
   mutate(sepsis=ifelse(sepsis3=="true",1,0))%>%  
-  mutate(U_ICUHR = as.integer(ceiling(difftime(as.POSIXct(as.character(deathtime), format="%Y-%m-%d %H:%M:%OS"),
-                                              as.POSIXct(as.character(intime), format="%Y-%m-%d %H:%M:%OS"), units="hours"))))%>%
+  mutate(U_ICUHR = hr_icuin2death)%>%
   mutate(icu_day = U_ICUHR/24) #icu outime might be later than death time.
   
 
 table1(~anchor_age + U_ICUHR + sofa_adm+ male+oasis+factor(sepsis)
-       +factor(vent)+wscore_vw+factor(chf)+factor(rf)+factor(metacanc)+factor(aids)| ethnicity, 
+       +factor(vent)+wscore_vw+factor(ld)+bmi| ethnicity, 
        data=cohort,overall="Total")
 
 
 
-sofa_recent <- read.csv("~/Desktop/icu_elos/sofa_hr.csv")%>%
+sofa_recent <- read.csv("sofa_hr.csv")%>%
   arrange(stay_id,hr)%>%
   mutate(renal_recent = ifelse((hr==0)&is.na(renal),0,renal))%>%
   mutate(renal_recent = na.locf(renal_recent,na.rm=FALSE))%>%
@@ -70,29 +70,38 @@ dat = sofa_recent %>%
   filter(hr>=24)%>%
   left_join(cohort, by = c('stay_id'))%>%
   left_join(sofa_recent[sofa_recent$hr==24,c('stay_id','sofa_recent')], by = c('stay_id'))%>%
-  filter(ethnicity=="WHITE" | ethnicity=="ASIAN" | ethnicity=="BLACK/AFRICAN AMERICAN" | ethnicity == "HISPANIC/LATINO")%>%
+  filter(ethnicity=="WHITE" | ethnicity=="ASIAN" | 
+           ethnicity=="BLACK/AFRICAN AMERICAN" | 
+           ethnicity == "HISPANIC/LATINO")%>%
+  filter(hr_death2icuout<=0)%>%
   mutate(ethnicity = factor(ethnicity))%>%
   filter(hr<=U_ICUHR)%>%
   mutate(sofa_diff = sofa_recent.x-sofa_recent.y)
 
 
-dat.id = unique(dat[,c("stay_id","ethnicity","anchor_age","sofa_adm","wscore_vw","U_ICUHR",'male',"oasis","sepsis","vent")])
-table1(~anchor_age + U_ICUHR + sofa_adm+ factor(male)+oasis+factor(sepsis)+factor(vent)+wscore_vw| ethnicity, 
+dat.id = unique(dat[,c("stay_id","ethnicity","anchor_age","sofa_adm","wscore_vw","U_ICUHR",'male',"oasis","sepsis","vent","chf","rf","metacanc","aids")])
+
+
+table1(~anchor_age + U_ICUHR + sofa_adm+ male+oasis+factor(sepsis)
+       +factor(vent)+wscore_vw+factor(chf)+factor(rf)+factor(metacanc)+factor(aids)| ethnicity, 
        data=dat.id,overall="Total")
 
 dat_dif = dat%>%
   #filter(U_ICUHR>=240)%>%
+  mutate(liver_diff = liver_recent-liver_adm)%>%
+  mutate(renal_diff = renal_recent-renal_adm)%>%
+  mutate(cns_diff = cns_recent-cns_adm)%>%
   filter(hr%%24==0)%>%
   mutate(hr2death = 24*(ceiling((hr-U_ICUHR)/24)))
   
 dat_dif_fw = dat_dif%>%
   #filter(U_ICUHR>120)%>%
-  filter(hr<=240)
+  filter(hr<=120)
   
 
 
 
-Sum = groupwiseMean(sofa_recent.x ~ hr + ethnicity,
+Sum = groupwiseMean(cns_recent ~ hr + ethnicity,
                     data   = dat_dif_fw,
                     conf   = 0.95,
                     digits = 3)
@@ -101,8 +110,9 @@ p1 = ggplot(Sum, aes(x=hr, y=Mean,color = ethnicity))+
   geom_point(position = position_dodge(width = 0.6))+
   geom_errorbar(aes(hr, ymin = Trad.lower, ymax = Trad.upper), 
                 position = position_dodge(width = 0.6))+
-  theme_bw()+ggtitle("Average SOFA score in 120 hrs after admission for people who survived more than 120 hrs")
-Sum = groupwiseMean(sofa_diff ~ hr + ethnicity,
+  theme_bw()+ggtitle("Average renal score in 120 hrs after admission")
+
+Sum = groupwiseMean(cns_diff ~ hr + ethnicity,
                     data   = dat_dif_fw,
                     conf   = 0.95,
                     digits = 3)
@@ -111,7 +121,7 @@ p2 = ggplot(Sum, aes(x=hr, y=Mean,color = ethnicity))+
   geom_point(position = position_dodge(width = 0.6))+
   geom_errorbar(aes(hr, ymin = Trad.lower, ymax = Trad.upper), 
                 position = position_dodge(width = 0.6))+
-  theme_bw()+ggtitle("Average relative change of SOFA score in 120 hrs after admission for people who survived more than 120 hrs")
+  theme_bw()+ggtitle("Average relative change of renal score in 120 hrs")
 
 grid.arrange(p1, p2, nrow = 2)
 
@@ -163,21 +173,29 @@ mdat = dat  %>%
   filter(hr %% 6 ==0)%>%
   filter(hr<=240)
 
-mdat = dat  %>%
-  filter(icu_day>25/24)%>%
-  mutate(age10=floor(anchor_age/10))%>%
-  mutate(sofa_change = sofa_recent.x-sofa_recent.y)%>%
-  filter(ifelse(hr>24*10,hr %% 24 == 0,sofa_diff_recent!=0))%>%
-  mutate(hr_day = ifelse(hr_day<icu_day,hr_day+0.001,hr_day))%>%
-  mutate(hr_day = hr_day-1)%>%
-  mutate(died = 1)%>%
-  mutate(icu_day = icu_day-0.999)
-
 
 length(unique(mdat$stay_id))
+
 mdat.id = unique(mdat[,c("stay_id","ethnicity","anchor_age","sofa_adm","wscore_vw","U_ICUHR",'male',"oasis",
-                         "sepsis","vent","icu_day","died","age10","sofa_recent.y")])
-table1(~anchor_age + U_ICUHR + sofa_adm+ factor(male)+oasis+factor(sepsis)+factor(vent)+wscore_vw| ethnicity, 
+                         "sepsis","vent","icu_day","died","age10","sofa_recent.y","drug","alcohol","diabc","obes","rf","ld",
+                         "first_careunit","last_careunit","admission_location","admission_type","bmi",
+                         "cns_adm","liver_adm","resp_adm","coag_adm","cv_adm","renal_adm")])
+table1(~anchor_age + U_ICUHR + sofa_adm+ factor(male)+oasis+factor(sepsis)+factor(vent)+wscore_vw + bmi| ethnicity, 
+       data=mdat.id,overall="Total")
+
+table1(~factor(drug)+factor(alcohol)+factor(diabc)+factor(obes)+factor(rf)+factor(ld)|ethnicity, 
+       data=mdat.id,overall="Total")
+         
+table1(~ factor(first_careunit)+factor(admission_location)+factor(admission_type)| ethnicity, 
+       data=mdat.id,overall="Total")
+         
+table1(~sofa_adm+cns_adm+liver_adm+resp_adm+coag_adm+cv_adm+renal_adm| ethnicity, 
+       data=mdat.id,overall="Total")
+
+
+
+table1(~anchor_age + U_ICUHR + sofa_adm+ male+oasis+sepsis
+       +vent+wscore_vw+chf+rf+metacanc| ethnicity, 
        data=mdat.id,overall="Total")
 
 rawfit <- survfit(Surv(icu_day+1,died)~  ethnicity, data=mdat.id)
