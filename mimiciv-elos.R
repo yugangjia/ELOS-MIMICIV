@@ -13,10 +13,11 @@ library(gridExtra)
 set.seed(30)
 
 dx <- read.csv("dx.csv")
+
 elixhauser_icd10 <- comorbidity(x = as.data.frame(filter(dx,icd_version==10)), id = "hadm_id", 
-                          code = "icd_code", score = "elixhauser", icd = "icd10", assign0 = FALSE)
+                          code = "icd_code", map = "elixhauser_icd10_quan", assign0 = FALSE)
 elixhauser_icd9 <- comorbidity(x = as.data.frame(filter(dx,icd_version==9)), id = "hadm_id", 
-                                code = "icd_code", score = "elixhauser", icd = "icd9", assign0 = FALSE)
+                                code = "icd_code", map = "elixhauser_icd9_quan", assign0 = FALSE)
 elix = rbind(elixhauser_icd10,elixhauser_icd9)
 EthinictyList = c('WHITE', 'ASIAN','BLACK/AFRICAN AMERICAN','HISPANIC/LATINO')
 
@@ -27,6 +28,7 @@ cohort <- read.csv("mimic_died_hospice.csv", stringsAsFactors=TRUE)%>%
   mutate(male=ifelse(gender=="M",1,0))%>%
   mutate(bmi = 10000*weight_admit/height^2)%>%
   mutate(ethnicity=as.factor(ethnicity))%>%
+  mutate(white = ifelse(ethnicity == "WHITE", "WHITE", "Non-WHITE"))%>%
   mutate(ethnicity=relevel(ethnicity, ref = 'WHITE'))%>%
   mutate(sepsis=ifelse(sepsis3=="true",1,0))%>%  
   mutate(U_ICUHR = hr_icuin2death)%>%
@@ -34,7 +36,7 @@ cohort <- read.csv("mimic_died_hospice.csv", stringsAsFactors=TRUE)%>%
   
 
 table1(~anchor_age + U_ICUHR + sofa_adm+ male+oasis+factor(sepsis)
-       +factor(vent)+wscore_vw+factor(ld)+bmi| ethnicity, 
+       +factor(vent)+factor(ld)+bmi| white, 
        data=cohort,overall="Total")
 
 
